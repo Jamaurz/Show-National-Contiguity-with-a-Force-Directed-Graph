@@ -1,127 +1,96 @@
 import '../style.sass';
 
-const url = 'https://raw.githubusercontent.com/FreeCodeCamp/ProjectReferenceData/master/cyclist-data.json';
-const margin = {top: 10, right: 30, bottom: 30, left: 40},
-    width = 960 - margin.left - margin.right,
-    height = 500 - margin.top - margin.bottom;
+const url = "https://raw.githubusercontent.com/DealPete/forceDirected/master/countries.json",
+    chart = d3.select("#chart"),
+    width = parseInt(chart.style("width")),
+    height = parseInt(chart.style("height")),
+    tooltip = d3.select("#d3-tip");
 
-let svg = d3.select("#root").append("svg")
-    .attr("width", width + margin.left + margin.right)
-    .attr("height", height + margin.top + margin.bottom)
-    .append("g")
-    .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+const svg = chart.append("svg")
+    .attr("width", width)
+    .attr("height", height);
 
-d3.json(url, function(error, data) {
+const simulation = d3.forceSimulation()
+    .force("link", d3.forceLink().distance(50).strength(0.5))
+    .force("charge", d3.forceManyBody().strength(-50))
+    .force("y", d3.forceY(height/ 2))
+    .force("x", d3.forceX(width/2))
+    .force("size", d3.forceCollide(10).strength(0.5))
+;
+d3.json(url, function(error, graph) {
   if (error) throw error;
   
-  const timeBase = d3.min(data, (d) => d.Seconds);
-       
-  const tip = d3.tip()
-    .attr('class', 'd3-tip')
-    .offset([-10, 0])
-    .html((d, st) => {
-      let info;
-       if (d.Doping !== "") {
-        info = d.Doping;
-      } else {
-        info = "No Doping Allegation";
-      }
-      return `<strong>${d.Name} - ${d.Nationality}</strong>
-      <div><span>Year:${d.Year}, time:${d.Time}</span></div>
-      <div>${info}</div>
-    `});
+  const link = svg.append("g")
+      .attr("class", "links")
+      .selectAll(".link")
+      .data(graph.links)
+      .enter().append("line")
+      .attr("class", "link")
+  ;
 
-  svg.call(tip);
-  let timePlas = 10;
-  let maxTime = d3.max(data, d => d.Seconds) + timePlas - timeBase;
-  let minTime = d3.min(data, d => d.Seconds) - 20 - timeBase;
-  let x = d3.scaleTime()
-    .domain([maxTime, minTime])
-    .range([0, width]);
+  const node = chart.append("g")
+    .attr('class', 'img')
+    .selectAll(".node")
+    .data(graph.nodes)
+    .enter().append("image")
+    .on('mouseover', tipShow)
+    .on('mouseout', tipHide)
+    .attr("class", function(d) { return "node flag flag-" + d.code})
+    .call(d3.drag()
+      .on("start", dragstarted)
+      .on("drag", dragged)
+      .on("end", dragended)
+     ); 
+;
 
-  let y = d3.scaleLinear()
-    .domain([1, data.length + 1])
-    .range([0, height]);
+  simulation
+      .nodes(graph.nodes)
+      .on("tick", ticked)
+  ;
 
-  function timeSet(sec) {
-    let time = new Date(1970, 0, 1); 
-    time.setSeconds(sec);
-    return d3.timeFormat("%M:%S")(time)
+  simulation.force("link")
+      .links(graph.links)
+  ;
+
+  function ticked() {
+    link
+        .attr("x1", (d) => d.source.x)
+        .attr("y1", (d) => d.source.y)
+        .attr("x2", (d) => d.target.x)
+        .attr("y2", (d) => d.target.y)
+    ;
+
+    node
+        .style("left", (d) => { return (d.x - 5) + "px"; })
+        .style("top", (d) => { return (d.y - 5) + "px"; })
+    ;
   }
-  
-  let xAxis = d3.axisBottom(x)
-    .tickFormat(timeSet)
-    .ticks(d3.timeMillisecond.every(30));
-  
-  let yAxis = d3.axisLeft(y)
-    .ticks(8);
-  
-   svg.append("g")
-      .attr("transform", "translate(0," + height + ")")
-      .call(xAxis)
-  
-  svg.append("g")
-      .call(yAxis)
-      .append("text")
-      .attr("x", 0)
-      .attr("y", 10)
-      .attr("dy", "-2em")
-      .style("text-anchor", "end")
-      .attr("transform", "rotate(-90)")
-      .text("Ranking")
-      .attr('font-size', '1.4em')
-      .style('fill', 'black');
- 
-   svg.selectAll(".text")
-    .data(data)
-    .enter()
-    .append("text")
-    .attr('class', 'text')
-    .attr('transform', 'translate(10, 5)')
-    .text((d) => d.Name)
-    .attr("x", (d) => x(d.Seconds - timeBase))
-    .attr("y", (d) => y(d.Place))
-  
-  svg.selectAll(".dot")
-    .data(data)
-    .enter()
-    .append("circle")
-    .attr("class", "dot")
-    .attr("r", 5)
-    .attr("cx", (d) => x(d.Seconds - timeBase))
-    .attr("cy", (d) => y(d.Place))
-    .attr("fill", function(d) {
-      if (d.Doping == "") {
-        return "green";
-      }
-      return "lightgreen";
-    })
-    .on('mouseover', function(d) {
-      d3.select(this).attr('fill', "orange");
-      tip.show(d);
-    })
-    .on('mouseout', function(d) { 
-      let color = (d.Doping == "") ? "green" :"lightgreen";
-      d3.select(this).attr('fill', color);
-      tip.hide(d);
-    });
-    // legend
-  var legend = svg.selectAll(".legend")
-      .data([{color: "green", text:"No doping allegations"}, {color: "lightgreen", text: "Riders with doping allegations"}])
-    .enter().append("g")
-      .attr("class", "legend")
-      .attr("transform", function(d, i) { return "translate(0,"  +(i * 20 + 200) + ")"; });
-
-  legend.append("circle")
-      .attr("r", 5)
-      .attr("cx", width - 10)
-      .attr("cy", 12)
-      .style("fill", (d) => d.color);
-
-  legend.append("text")
-      .attr("x", width - 24)
-      .attr("y", 9)
-      .attr("dy", ".35em")
-      .style("text-anchor", "end")
-      .text((d) => d.text)
 });
+
+function dragstarted(d) {
+  if (!d3.event.active) simulation.alphaTarget(0.3).restart();
+  d.fx = d.x;
+  d.fy = d.y;
+}
+
+function dragged(d) {
+  d.fx = d3.event.x;
+  d.fy = d3.event.y;
+}
+
+function dragended(d) {
+  if (!d3.event.active) simulation.alphaTarget(0);
+  d.fx = null;
+  d.fy = null;
+}
+
+function tipShow(d) {
+  tooltip.style("display", "block")
+    .text(d.country)
+    .style("left", (d.x + 25) + "px")
+    .style("top", (d.y - 25) + "px");
+}
+
+function tipHide(d) {
+  tooltip.style("display", "none");
+}
